@@ -20,15 +20,15 @@ def trigammaInverse(x):
     x_valid = x[valid]
     y_valid = np.zeros_like(x_valid)
 
-    # 处理大值 (x > 1e7)
+    # Handle large values (x > 1e7)
     large = x_valid > 1e7
     y_valid[large] = 1.0 / np.sqrt(x_valid[large])
 
-    # 处理小值 (x < 1e-6)
+    # Handle small values (x < 1e-6)
     small = x_valid < 1e-6
     y_valid[small] = 1.0 / x_valid[small]
 
-    # 中间值用牛顿迭代法
+    # Use Newton's method for intermediate values
     other = ~large & ~small
     if np.any(other):
         x_other = x_valid[other]
@@ -133,11 +133,11 @@ def fitFDist(x, df1, covariate=None):
         fit_coef = lstsq(R, Q.T @ e, cond=None)[0]
         emean_fitted = design @ fit_coef
 
-        # 关键修正：计算残差方差时要考虑自由度
+        # Critical fix: account for the degrees of freedom when computing the residual variance
         residuals = e - emean_fitted
-        residual_df = n - rank  # 残差自由度
+        residual_df = n - rank  # Residual degrees of freedom
         if residual_df > 0:
-            evar = np.sum(residuals ** 2) / residual_df  # 除以残差自由度
+            evar = np.sum(residuals ** 2) / residual_df  # Divide by the residual df
         else:
             evar = 0.0
 

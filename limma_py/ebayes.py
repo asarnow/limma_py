@@ -102,7 +102,7 @@ def eBayes(fit,proportion=0.01,stdev_coef_lim=(0.1,4),trend=False,robust=False,w
     if trend is True and fit.get("Amean") is None:
         raise ValueError("Need Amean component in fit to estimate trend")
 
-    # 假设 _ebayes 返回一个字典 eb
+    # Assume _ebayes returns a dict named `eb`
     eb = _ebayes(
         fit=fit,
         proportion=proportion,
@@ -112,7 +112,7 @@ def eBayes(fit,proportion=0.01,stdev_coef_lim=(0.1,4),trend=False,robust=False,w
         winsor_tail_p=winsor_tail_p,
         legacy=legacy,
     )
-    # 把 eb 里的字段回填到 fit
+    # Write the fields from `eb` back into `fit`
     fit.update({
         "df_prior": eb["df_prior"],
         "s2_prior": eb["s2_prior"],
@@ -124,13 +124,13 @@ def eBayes(fit,proportion=0.01,stdev_coef_lim=(0.1,4),trend=False,robust=False,w
         "p_value": eb["p_value"],
         "lods": eb["lods"],
     })
-    # 在 ebayes.py 中替换
+    # Replacement block within ebayes.py
     if fit.get("design") is not None and np.linalg.matrix_rank(fit["design"]) == fit["design"].shape[1]:
-        F_stat = classify_tests_f(fit, fstat_only=True)  # 调用 classify_tests_f，只返回 F 统计量
-        fit["F"] = F_stat.to_numpy().ravel()  # 将 F 统计量转换为一维数组
-        df1 = F_stat.attrs["df1"]  # 获取分子自由度
-        df2 = F_stat.attrs["df2"]  # 获取分母自由度
-        fit["F_p_value"] = f.sf(fit["F"], df1, df2)  # 计算 F 统计量的 p 值
+        F_stat = classify_tests_f(fit, fstat_only=True)  # Call classify_tests_f, requesting only the F-statistic
+        fit["F"] = F_stat.to_numpy().ravel()  # Flatten the F-statistic into a 1D array
+        df1 = F_stat.attrs["df1"]  # Numerator degrees of freedom
+        df2 = F_stat.attrs["df2"]  # Denominator degrees of freedom
+        fit["F_p_value"] = f.sf(fit["F"], df1, df2)  # P-value for the F-statistic
     return fit
 
 def _ebayes(fit, proportion, stdev_coef_lim, trend, robust, winsor_tail_p, legacy):
@@ -174,22 +174,22 @@ def _ebayes(fit, proportion, stdev_coef_lim, trend, robust, winsor_tail_p, legac
     del out["var_prior"]
     del out["var_post"]
 
-    # 1. 确保 s2_post 是形状为 (基因数, 1) 的二维数组
-    s2_post = out["s2_post"].reshape(-1, 1)  # 关键：转换为列向量
+    # 1. Ensure s2_post is a 2D array with shape (n_genes, 1)
+    s2_post = out["s2_post"].reshape(-1, 1)  # Critical: reshape to a column vector
 
-    # 2. 将 coefficients 和 stdev_unscaled 转换为 numpy 数组（移除 pandas 索引影响）
+    # 2. Convert coefficients and stdev_unscaled to numpy arrays (strip any pandas index influence)
     coef_np = coefficients
     stdev_np = np.asarray(stdev_unscaled)
 
-    # 3. 执行除法运算（此时形状兼容：[n×4] / [n×4] / [n×1]）
+    # 3. Perform the division (shapes now broadcast: [n x 4] / [n x 4] / [n x 1])
     out["t"] = coef_np / stdev_np / np.sqrt(s2_post)
-    # 计算 df.total
+    # Compute df.total
     df_total = df_residual + out["df_prior"]
 
-    # 计算 df.pooled（忽略 NaN 值）
+    # Compute df.pooled (ignoring NaN values)
     df_pooled = np.sum(df_residual, axis=0)
 
-    # 确保 df.total 不超过 df.pooled
+    # Ensure df.total does not exceed df.pooled
     df_total = np.minimum(df_total, df_pooled)
 
     out["df_total"] = df_total
@@ -199,14 +199,14 @@ def _ebayes(fit, proportion, stdev_coef_lim, trend, robust, winsor_tail_p, legac
 
     stdev_coef_lim_sq = np.square(stdev_coef_lim)
     var_prior_lim = stdev_coef_lim_sq / np.median(out["s2_prior"])
-    # 在调用 tmixture_matrix 之前添加调试
+    # Debugging hook before calling tmixture_matrix
 
     out["var_prior"] = tmixture_matrix(out["t"], stdev_unscaled, out["df_total"], proportion, var_prior_lim)
 
     if np.any(np.isnan(out["var_prior"])):
-        # 将 NaN 值替换为 1 / s2_prior
+        # Replace NaN values with 1 / s2_prior
         out["var_prior"][np.isnan(out["var_prior"])] = 1 / out["s2_prior"]
-        # 发出警告
+        # Issue a warning
         import warnings
         warnings.warn("Estimation of var.prior failed - set to default value")
 
@@ -235,7 +235,7 @@ def _ebayes(fit, proportion, stdev_coef_lim, trend, robust, winsor_tail_p, legac
 
 
 def tmixture_matrix(tstat, stdev_unscaled, df, proportion, v0_lim=None):
-    # 确保输入是二维数组
+    # Ensure inputs are 2D arrays
     tstat = np.atleast_2d(tstat)
     stdev_unscaled = np.atleast_2d(stdev_unscaled)
 
@@ -248,7 +248,7 @@ def tmixture_matrix(tstat, stdev_unscaled, df, proportion, v0_lim=None):
     ncoef = tstat.shape[1]
     v0 = np.zeros(ncoef)
 
-    # 为每个系数列计算 var.prior
+    # Compute var.prior for each coefficient column
     for j in range(ncoef):
 
         v0[j] = tmixture_vector(tstat[:, j], stdev_unscaled[:, j], df, proportion, v0_lim)
@@ -258,19 +258,19 @@ def tmixture_matrix(tstat, stdev_unscaled, df, proportion, v0_lim=None):
 
 
 def tmixture_vector(tstat, stdev_unscaled, df, proportion, v0_lim=None):
-    # 关键修正：确保所有输入都是一维数组
+    # Critical fix: ensure all inputs are 1D arrays
     tstat = np.asarray(tstat).flatten()
     stdev_unscaled = np.asarray(stdev_unscaled).flatten()
     df = np.asarray(df).flatten()
 
-    # Step 1: 去除缺失值
+    # Step 1: Drop missing values
     if np.any(np.isnan(tstat)):
         o = ~np.isnan(tstat)
         tstat = tstat[o]
         stdev_unscaled = stdev_unscaled[o]
         df = df[o]
 
-    # Step 2: 选取目标数量
+    # Step 2: Pick the target count
     ngenes = len(tstat)
     ntarget = int(np.ceil(proportion / 2 * ngenes))
     if ntarget < 1:
@@ -278,7 +278,7 @@ def tmixture_vector(tstat, stdev_unscaled, df, proportion, v0_lim=None):
 
     p = max(ntarget / ngenes, proportion)
 
-    # Step 3: 统一自由度
+    # Step 3: Unify degrees of freedom
     tstat_abs = np.abs(tstat)
     MaxDF = np.max(df)
     i = df < MaxDF
@@ -287,29 +287,29 @@ def tmixture_vector(tstat, stdev_unscaled, df, proportion, v0_lim=None):
         tstat_abs[i] = t.ppf(1 - np.exp(TailP), MaxDF)
         df[i] = MaxDF
 
-    # Step 4: 选取最显著的ntarget个t
+    # Step 4: Select the ntarget most significant t-statistics
     o = np.argsort(-tstat_abs)[:ntarget]
     tstat_selected = tstat_abs[o]
     v1 = stdev_unscaled[o] ** 2
 
-    # Step 5: 计算p0和ptarget
+    # Step 5: Compute p0 and ptarget
     p0 = 2 * t.sf(tstat_selected, df=MaxDF)
     r = np.arange(1, ntarget + 1)
     ptarget = ((r - 0.5) / ngenes - (1 - p) * p0) / p
     ptarget = np.maximum(ptarget, 1e-10)
 
-    # Step 6: 根据显著性反推v0
+    # Step 6: Back out v0 from the significance levels
     v0 = np.zeros(ntarget)
     pos = ptarget > p0
     if np.any(pos):
         qtarget = t.ppf(1 - ptarget[pos] / 2, df=MaxDF)
         v0[pos] = v1[pos] * ((tstat_selected[pos] / qtarget) ** 2 - 1)
 
-    # Step 7: 限制v0范围
+    # Step 7: Clip v0 to the allowed range
     if v0_lim is not None:
         v0 = np.clip(v0, v0_lim[0], v0_lim[1])
 
-    # Step 8: 平均返回
+    # Step 8: Return the average
     valid_v0 = v0[np.isfinite(v0)]
     if len(valid_v0) == 0:
         return np.nan

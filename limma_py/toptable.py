@@ -115,36 +115,36 @@ def toptable(fit,
             genelist = fit['probes']
         elif 'genes' in fit and fit['genes'] is not None:
             genelist = fit['genes']
-    # 自动转换 numpy 数组到 DataFrame
+    # Automatically convert numpy arrays in `fit` to DataFrames
     if isinstance(fit, dict):
-        # 确保 coefficients 是 DataFrame
+        # Ensure `coefficients` is a DataFrame
         if "coefficients" in fit and isinstance(fit["coefficients"], np.ndarray):
-            # 如果没有列名，使用默认列名
+            # Use default column names if none are provided
             n_cols = fit["coefficients"].shape[1]
             col_names = [f'Coef{i}' for i in range(n_cols)]
             index_names = range(fit["coefficients"].shape[0])
             fit["coefficients"] = pd.DataFrame(fit["coefficients"], columns=col_names, index=index_names)
 
-        # 转换 t 统计量
+        # Convert the t-statistic
         if "t" in fit and isinstance(fit["t"], np.ndarray):
-            # 使用 coefficients 的列名和索引
+            # Reuse the column names and index from `coefficients`
             col_names = fit["coefficients"].columns
             index_names = fit["coefficients"].index
             fit["t"] = pd.DataFrame(fit["t"], columns=col_names, index=index_names)
 
-        # 转换 p_value
+        # Convert p_value
         if "p_value" in fit and isinstance(fit["p_value"], np.ndarray):
             col_names = fit["coefficients"].columns
             index_names = fit["coefficients"].index
             fit["p_value"] = pd.DataFrame(fit["p_value"], columns=col_names, index=index_names)
 
-        # 转换 lods
+        # Convert lods
         if "lods" in fit and isinstance(fit["lods"], np.ndarray):
             col_names = fit["coefficients"].columns
             index_names = fit["coefficients"].index
             fit["lods"] = pd.DataFrame(fit["lods"], columns=col_names, index=index_names)
 
-        # 转换其他可能为数组的组件，如 F 和 F_p_value
+        # Convert other possibly-array components such as F and F_p_value
         if "F" in fit and isinstance(fit["F"], np.ndarray):
             index_names = fit["coefficients"].index
             fit["F"] = pd.Series(fit["F"], index=index_names)
@@ -153,13 +153,13 @@ def toptable(fit,
             index_names = fit["coefficients"].index
             fit["F_p_value"] = pd.Series(fit["F_p_value"], index=index_names)
 
-        # 转换 stdev_unscaled
+        # Convert stdev_unscaled
         if "stdev_unscaled" in fit and isinstance(fit["stdev_unscaled"], np.ndarray):
             col_names = fit["coefficients"].columns
             index_names = fit["coefficients"].index
             fit["stdev_unscaled"] = pd.DataFrame(fit["stdev_unscaled"], columns=col_names, index=index_names)
 
-        # 转换 Amean
+        # Convert Amean
         if "Amean" in fit and isinstance(fit["Amean"], np.ndarray):
             index_names = fit["coefficients"].index
             fit["Amean"] = pd.Series(fit["Amean"], index=index_names)
@@ -211,9 +211,9 @@ def toptable(fit,
         if fit.get("treat.lfc") is not None:
             raise ValueError("Treat p-values can only be displayed for single coefficients")
 
-        coef = list(dict.fromkeys(coef))  # unique，保持顺序
+        coef = list(dict.fromkeys(coef))  # Unique values, preserving order
 
-        # 如果当前 fit 的系数列数 > 要保留的列数，就按 coef 切片
+        # If `fit` has more coefficient columns than we want to keep, slice by `coef`
         if fit["coefficients"].shape[1] > len(coef):
             fit = {k: v.iloc[:, coef] if k in ("coefficients", "t", "p_value", "lods", "stdev_unscaled")
             else v for k, v in fit.items()}
@@ -221,7 +221,7 @@ def toptable(fit,
         if sort_by == "B":
             sort_by = "F"
 
-        # 调用 .topTableF 的 Python 版本
+        # Call the Python version of .topTableF
         return _topTableF(fit,
                           number=number,
                           genelist=genelist,
@@ -229,10 +229,10 @@ def toptable(fit,
                           sort_by=sort_by,
                           p_value=p_value,
                           lfc=lfc)
-    # 1. 把 fit 变成普通 dict/DataFrame（相当于 R 的 unclass）
-    fit = dict(fit)  # 如果 fit 原本是自定义对象，转成纯 dict
+    # 1. Cast `fit` to a plain dict/DataFrame (equivalent to R's unclass)
+    fit = dict(fit)  # If `fit` was a custom object, convert it to a plain dict
 
-    # 2. 构造 ebcols
+    # 2. Build ebcols
     ebcols = ["t", "p_value", "lods"]
     if confint:
         ebcols = ["s2_post", "df_total"] + ebcols
@@ -245,22 +245,22 @@ def toptable(fit,
     eb_dict = {}
     for k in ebcols:
         if k in fit:
-            # 对 t、p_value、lods 进行列选择，其他统计量保持不变
+            # Slice columns of t, p_value, and lods; leave the other statistics untouched
             if k in ("t", "p_value", "lods") and hasattr(fit[k], 'iloc'):
                 eb_dict[k] = fit[k].iloc[:, coef]
             else:
                 eb_dict[k] = fit[k]
 
-    # 3. 组装传给 _top_table_t 的参数
+    # 3. Assemble the arguments passed to _top_table_t
     return _topTableT(
         fit={
-            "coefficients": fit["coefficients"].iloc[:, coef],  # 只保留 coef 列
+            "coefficients": fit["coefficients"].iloc[:, coef],  # Keep only the requested coefficient columns
             "stdev_unscaled": fit["stdev_unscaled"].iloc[:, coef]
         },
         coef=coef_int,
         number=number,
         genelist=genelist,
-        A=fit.get("Amean"),  # 如果 fit 里存的是 Amean
+        A=fit.get("Amean"),  # Amean if it is stored in `fit`
         eb=eb_dict,
         adjust_method=adjust_method,
         sort_by=sort_by,
@@ -306,11 +306,11 @@ def _topTableF(fit,
     if genelist is not None and (not isinstance(genelist, pd.DataFrame) or genelist.ndim == 1):
         genelist = pd.DataFrame({"ProbeID": genelist})
 
-    # 处理行名
+    # Handle row names
     if rn is None or len(rn) == 0:
         rn = list(range(M.shape[0]))
     else:
-        # 检查重复行名
+        # Check for duplicate row names
         if len(rn) != len(set(rn)):
             if genelist is None:
                 genelist = pd.DataFrame({"ID": rn})
@@ -319,7 +319,7 @@ def _topTableF(fit,
                     genelist = genelist.assign(ID0=rn)
                 else:
                     genelist = genelist.assign(ID=rn)
-            rn = list(range(M.shape[0]))  # 用数字索引替换
+            rn = list(range(M.shape[0]))  # Replace with positional indices
 
     valid = ("F", "none")
     if sort_by not in valid:
@@ -331,13 +331,13 @@ def _topTableF(fit,
     adj_p_value = smm.multipletests(Fp, method=adjust_method)[1]
 
     if lfc > 0 or p_value < 1:
-        # 倍数过滤
+        # Fold-change filtering
         if lfc > 0:
-            big = np.any(np.abs(M) > lfc, axis=1)  # 每行至少一个系数满足
+            big = np.any(np.abs(M) > lfc, axis=1)  # At least one coefficient per row must pass
         else:
             big = np.ones(M.shape[0], dtype=bool)
 
-        # p 值过滤
+        # P-value filtering
         if p_value < 1:
             sig = adj_p_value <= p_value
             sig = np.where(np.isnan(sig), False, sig)
@@ -346,13 +346,13 @@ def _topTableF(fit,
 
         keep = big & sig
 
-        # 按索引统一切片 - 关键修复点：使用iloc处理pandas对象
+        # Slice by index uniformly - key fix: use iloc for pandas objects
         if not keep.all():
             idx = np.where(keep)[0]
             M = M[idx, :]
             rn = [rn[i] for i in idx]
 
-            # 对pandas Series使用iloc进行位置索引
+            # Use iloc for positional indexing on pandas Series
             if isinstance(Amean, pd.Series):
                 Amean = Amean.iloc[idx]
             else:
@@ -371,34 +371,34 @@ def _topTableF(fit,
             genelist = genelist.iloc[idx] if genelist is not None else None
             adj_p_value = adj_p_value[idx]
 
-    # 确保number不超过可用数据量
+    # Ensure `number` does not exceed the amount of available data
     if M.shape[0] < number:
         number = M.shape[0]
     if number < 1:
         return pd.DataFrame()
 
-    # 排序索引
+    # Sort indices
     if sort_by == "F":
-        o = np.argsort(Fp)[:number]  # 升序（小 p 值在前）
+        o = np.argsort(Fp)[:number]  # Ascending (smallest p-values first)
     else:
         o = np.arange(number)
 
-    # 构建结果表格
+    # Build the result table
     if genelist is None:
         tab = pd.DataFrame(M[o, :], columns=col_names)
     else:
-        # 确保genelist切片正确
+        # Ensure genelist is sliced correctly
         tab = genelist.iloc[o, :].copy()
-        m_df = pd.DataFrame(M[o, :], columns=col_names, index=tab.index)  # 确保索引一致
+        m_df = pd.DataFrame(M[o, :], columns=col_names, index=tab.index)  # Keep indices aligned
         tab = pd.concat([tab, m_df], axis=1)
 
-    # 添加统计量列 - 确保所有数组长度一致
+    # Append statistic columns - ensure all arrays have matching lengths
     tab["AveExpr"] = Amean.iloc[o].to_numpy() if isinstance(Amean, pd.Series) else Amean[o]
     tab["F"] = Fstat.iloc[o].to_numpy() if isinstance(Fstat, pd.Series) else Fstat[o]
     tab["P.Value"] = Fp.iloc[o].to_numpy() if isinstance(Fp, pd.Series) else Fp[o]
     tab["adj.P.Val"] = adj_p_value[o]
 
-    # 设置索引
+    # Set the index
     tab.index = [rn[i] for i in o]
     tab = tab.reset_index(drop=True)
     return tab
@@ -421,14 +421,14 @@ def _topTableT(fit,
                    "bonferroni": "bonferroni", "holm": "holm", "none": "none"}
     adjust_method = _method_map.get(adjust_method, adjust_method)
 
-    # 关键修改：从 fit 对象获取基因名
+    # Key change: pull gene names from the `fit` object
     if genelist is None:
         if 'probes' in fit and fit['probes'] is not None:
             genelist = fit['probes']
         elif hasattr(fit.get('coefficients'), 'index'):
             genelist = fit['coefficients'].index.tolist()
 
-    # 关键修改：确保正确获取行名
+    # Key change: ensure the row names are obtained correctly
     if hasattr(fit["coefficients"], 'index'):
         rn = fit["coefficients"].index.tolist()
     else:
@@ -448,7 +448,7 @@ def _topTableT(fit,
         import warnings
         warnings.warn("Treat is for single coefficients: only first value of coef being used")
 
-    # 关键修改：正确处理 genelist
+    # Key change: handle genelist correctly
     if genelist is not None:
         if isinstance(genelist, list):
             genelist = pd.DataFrame({"ID": genelist})
@@ -459,7 +459,7 @@ def _topTableT(fit,
     if rn is None or len(rn) == 0:
         rn = list(range(fit["coefficients"].shape[0]))
     else:
-        # Python 检测重复
+        # Detect duplicates in Python
         if len(rn) != len(set(rn)):
             if genelist is None:
                 genelist = pd.DataFrame({"ID": rn})
@@ -474,7 +474,7 @@ def _topTableT(fit,
     if sort_by not in valid:
         raise ValueError(f"sort.by must be one of {valid}")
 
-    # 别名转换
+    # Alias normalization
     alias_map = {
         "M": "logFC",
         "A": "AveExpr",
@@ -510,7 +510,7 @@ def _topTableT(fit,
     else:
         include_B = True
 
-    # 提取指定列
+    # Extract the requested column
     M = fit["coefficients"][:, col_index]
     tstat = np.asarray(eb["t"])[:, col_index]
     P_Value = np.asarray(eb["p_value"])[:, col_index]
@@ -548,7 +548,7 @@ def _topTableT(fit,
     if number < 1:
         return pd.DataFrame()
 
-    # 生成排序下标
+    # Build the sort indices
     if sort_by == "logFC":
         order = np.argsort(-np.abs(M))
     elif sort_by == "AveExpr":
@@ -564,18 +564,18 @@ def _topTableT(fit,
 
     top = order[:number]
 
-    # 关键修改：构建结果表格并设置基因名索引
+    # Key change: build the result table and set gene names as the index
     if genelist is None:
         tab = pd.DataFrame({"logFC": M[top]})
-        # 直接设置基因名索引
+        # Set the gene-name index directly
         tab.index = [rn[i] for i in top]
     else:
         tab = genelist.iloc[top].copy()
         tab["logFC"] = M[top]
-        # 设置基因名索引
+        # Set the gene-name index
         tab.index = [rn[i] for i in top]
 
-    # 置信区间和其他统计量
+    # Confidence intervals and other statistics
     if confint:
         alpha = 0.975 if not isinstance(confint, (int, float)) else (1 + float(confint)) / 2
         df_t = eb["df_total"][top]

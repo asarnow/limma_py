@@ -5,23 +5,23 @@ from scipy.linalg import qr
 
 
 def as_matrix_weights(weights, shape):
-    """将权重转换为矩阵格式 - 完全保持原样"""
+    """Convert weights to matrix format - kept exactly as in the original."""
     if weights is None:
         return None
     weights = np.array(weights)
     if weights.ndim == 1:
         if weights.shape[0] == shape[0]:
-            # 行权重
+            # Row weights
             return np.tile(weights[:, np.newaxis], (1, shape[1]))
         elif weights.shape[0] == shape[1]:
-            # 列权重
+            # Column weights
             return np.tile(weights[np.newaxis, :], (shape[0], 1))
         else:
-            raise ValueError("权重维度不匹配")
+            raise ValueError("weight dimensions do not match")
     elif weights.shape == shape:
         return weights
     else:
-        raise ValueError("权重维度不匹配")
+        raise ValueError("weight dimensions do not match")
 
 
 def lm_series(M: np.ndarray,
@@ -31,17 +31,17 @@ def lm_series(M: np.ndarray,
               weights: Optional[np.ndarray] = None,
               debug: bool = True) -> Dict[str, Any]:
     """
-    为每个基因拟合线性模型到一系列数组
-    - 完全保持原有逻辑，只添加pandas检测
+    Fit a linear model for each gene to a series of arrays.
+    - Original logic is preserved exactly; only pandas detection is added.
     """
 
-    # 检查表达矩阵 - 添加pandas支持
+    # Check the expression matrix - added pandas support
     if isinstance(M, pd.DataFrame):
         M = M.values
     M = np.asarray(M, dtype=np.float64)
     narrays = M.shape[1]
 
-    # 检查设计矩阵 - 添加pandas支持
+    # Check the design matrix - added pandas support
     if design is None:
         design = np.ones((narrays, 1), dtype=np.float64)
     else:
@@ -54,7 +54,7 @@ def lm_series(M: np.ndarray,
     if hasattr(design, 'columns'):
         coef_names = list(design.columns)
 
-    # 检查权重 - 添加pandas支持
+    # Check the weights - added pandas support
     if weights is not None:
         if isinstance(weights, pd.DataFrame):
             weights = weights.values
@@ -62,7 +62,7 @@ def lm_series(M: np.ndarray,
         weights[weights <= 0] = np.nan
         M[np.isnan(weights)] = np.nan
 
-    # 将重复的行重新格式化为列 - 完全保持原样
+    # Reformat duplicated rows as columns - kept exactly as in the original
     if ndups > 1:
         M = unwrapdups(M, ndups=ndups, spacing=spacing)
         design = np.kron(design, np.ones(ndups))
@@ -70,46 +70,46 @@ def lm_series(M: np.ndarray,
             weights = unwrapdups(weights, ndups=ndups, spacing=spacing)
         narrays = M.shape[1]
 
-    # 初始化标准误 - 完全保持原样
+    # Initialize standard errors - kept exactly as in the original
     ngenes = M.shape[0]
     stdev_unscaled = np.full((ngenes, nbeta), np.nan)
     beta = np.full((ngenes, nbeta), np.nan)
 
-    # 设置行名和列名 - 完全保持原样
+    # Set row and column names - kept exactly as in the original
     if hasattr(M, 'index'):
         row_names = list(M.index)
     else:
         row_names = [f"gene_{i}" for i in range(ngenes)]
 
-    # 检查QR分解是否对所有基因都是常数 - 完全保持原样
+    # Check whether the QR decomposition is constant across all genes - kept exactly as in the original
     NoProbeWts = np.all(np.isfinite(M)) and (weights is None or hasattr(weights, 'arrayweights'))
 
     if NoProbeWts:
-        # ========== 完全保持原有的 NoProbeWts 情况 ==========
+        # ========== NoProbeWts branch, kept exactly as in the original ==========
 
         if weights is None:
-            # 使用 SVD 提高数值稳定性 - 完全保持原样
+            # Use SVD to improve numerical stability - kept exactly as in the original
             try:
                 U, s, Vt = np.linalg.svd(design, full_matrices=False)
-                rank = np.sum(s > s[0] * 1e-12)  # 基于相对大小的秩检测
+                rank = np.sum(s > s[0] * 1e-12)  # Rank detection based on relative magnitude
 
                 if rank > 0:
-                    # 计算系数
+                    # Compute the coefficients
                     fit_coef = (Vt.T @ (np.diag(1 / s) @ (U.T @ M.T))).T
 
-                    # 计算残差
+                    # Compute residuals
                     y_pred = design @ fit_coef.T
                     residuals_matrix = M.T - y_pred
 
-                    # 计算 sigma
+                    # Compute sigma
                     df_residual = narrays - rank
                     if df_residual > 0:
-                        # 使用更稳定的残差计算
+                        # Use a more stable residual calculation
                         sigma = np.sqrt(np.sum(residuals_matrix ** 2, axis=0) / df_residual)
                     else:
                         sigma = np.full(ngenes, np.nan)
 
-                    # 计算协方差矩阵和标准误
+                    # Compute the covariance matrix and standard errors
                     cov_coef = Vt.T @ np.diag(1 / s[:rank] ** 2) @ Vt[:, :rank]
                     diag_cov = np.sqrt(np.diag(cov_coef))
                     stdev_unscaled[:, :rank] = np.tile(diag_cov, (ngenes, 1))
@@ -128,38 +128,38 @@ def lm_series(M: np.ndarray,
 
             except np.linalg.LinAlgError as e:
                 if debug:
-                    print(f"SVD 分解失败，回退到原方法: {e}")
-                # 回退到原方法
+                    print(f"SVD decomposition failed, falling back to the original method: {e}")
+                # Fall back to the original method
                 pass
 
         else:
-            # 加权情况 - 使用更稳定的方法 - 完全保持原样
+            # Weighted case - use a more stable method - kept exactly as in the original
             try:
-                # 使用第一行权重（假设所有基因权重相同）
+                # Use the first row of weights (assumes all genes share the same weights)
                 W_sqrt = np.sqrt(weights[0, :])
                 W_design = design * W_sqrt[:, np.newaxis]
                 W_M = M.T * W_sqrt
 
-                # SVD 分解
+                # SVD decomposition
                 U, s, Vt = np.linalg.svd(W_design, full_matrices=False)
                 rank = np.sum(s > s[0] * 1e-12)
 
                 if rank > 0:
                     fit_coef = (Vt.T @ (np.diag(1 / s) @ (U.T @ W_M))).T
 
-                    # 计算加权残差
+                    # Compute weighted residuals
                     y_pred = design @ fit_coef.T
                     residuals_matrix = M.T - y_pred
                     weighted_residuals = residuals_matrix * W_sqrt
 
-                    # 计算 sigma
+                    # Compute sigma
                     df_residual = narrays - rank
                     if df_residual > 0:
                         sigma = np.sqrt(np.sum(weighted_residuals ** 2, axis=0) / df_residual)
                     else:
                         sigma = np.full(ngenes, np.nan)
 
-                    # 计算协方差矩阵和标准误
+                    # Compute the covariance matrix and standard errors
                     cov_coef = Vt.T @ np.diag(1 / s[:rank] ** 2) @ Vt[:, :rank]
                     diag_cov = np.sqrt(np.diag(cov_coef))
                     stdev_unscaled[:, :rank] = np.tile(diag_cov, (ngenes, 1))
@@ -178,24 +178,24 @@ def lm_series(M: np.ndarray,
 
             except np.linalg.LinAlgError as e:
                 if debug:
-                    print(f"加权 SVD 分解失败，回退到原方法: {e}")
-                # 回退到原方法
+                    print(f"Weighted SVD decomposition failed, falling back to the original method: {e}")
+                # Fall back to the original method
                 pass
 
-        # ========== NoProbeWts 情况结束 ==========
+        # ========== End of NoProbeWts branch ==========
 
-        # 如果 SVD 方法失败，回退到原来的 lstsq 方法 - 完全保持原样
+        # If the SVD method fails, fall back to the original lstsq method - kept exactly as in the original
         if weights is None:
-            # 1. 拟合模型获取系数
+            # 1. Fit the model to obtain coefficients
             fit_coef, _, rank, _ = np.linalg.lstsq(design, M.T, rcond=1e-12)
-            fit_coef = fit_coef.T  # 转为（基因×系数）
+            fit_coef = fit_coef.T  # Transpose to (genes x coefficients)
 
-            # 2. 手动计算残差矩阵（样本×基因），对应R的effects
-            y_pred = design @ fit_coef.T  # 形状：（样本数 × 基因数）
-            residuals_matrix = M.T - y_pred  # 残差矩阵（样本×基因）
+            # 2. Manually compute the residual matrix (samples x genes), corresponding to R's `effects`
+            y_pred = design @ fit_coef.T  # Shape: (n_samples x n_genes)
+            residuals_matrix = M.T - y_pred  # Residual matrix (samples x genes)
 
         else:
-            # 加权情况的类似处理
+            # Analogous handling for the weighted case
             W_sqrt = np.sqrt(weights[0, :])
             W_design = design * W_sqrt[:, np.newaxis]
             W_M = M.T * W_sqrt
@@ -204,12 +204,12 @@ def lm_series(M: np.ndarray,
             y_pred = W_design @ fit_coef.T
             residuals_matrix = W_M - y_pred
 
-        # 3. 计算sigma
-        narrays = design.shape[0]  # 样本数
+        # 3. Compute sigma
+        narrays = design.shape[0]  # Number of samples
         if rank < narrays:
             df_residual = narrays - rank
             if df_residual > 0:
-                residual_effects = residuals_matrix[rank:, :]  # 形状：（df_residual × 基因数）
+                residual_effects = residuals_matrix[rank:, :]  # Shape: (df_residual x n_genes)
                 mean_sq = np.mean(residual_effects ** 2, axis=0)
                 sigma = np.sqrt(mean_sq)
             else:
@@ -217,14 +217,14 @@ def lm_series(M: np.ndarray,
         else:
             sigma = np.full(ngenes, np.nan)
 
-        # 计算协方差矩阵
+        # Compute the covariance matrix
         try:
             Q, R = qr(design, mode='economic')
             cov_coef = np.linalg.inv(R.T @ R)
         except Exception as e:
             cov_coef = np.full((nbeta, nbeta), np.nan)
 
-        # 计算未缩放的标准偏差
+        # Compute unscaled standard deviations
         est = np.arange(rank)
         diag_cov = np.sqrt(np.diag(cov_coef))
         stdev_unscaled[:, est] = np.tile(diag_cov, (ngenes, 1))
@@ -243,7 +243,7 @@ def lm_series(M: np.ndarray,
         return result
 
     else:
-        # 需要逐基因QR分解，因此遍历基因 - 完全保持原样不变
+        # A per-gene QR decomposition is needed, so iterate over genes - kept exactly as in the original
         sigma = np.full(ngenes, np.nan)
         df_residual = np.zeros(ngenes)
 
@@ -258,12 +258,12 @@ def lm_series(M: np.ndarray,
                 y_obs = y[obs]
 
                 if weights is None:
-                    # 普通最小二乘 - 完全保持原样
+                    # Ordinary least squares - kept exactly as in the original
                     try:
                         coef, residuals, rank, s = np.linalg.lstsq(X, y_obs, rcond=None)
                         beta[i, :] = coef
 
-                        # 计算残差平方和
+                        # Compute the residual sum of squares
                         y_fitted = X @ coef
                         residuals = y_obs - y_fitted
                         sum_res = np.sum(residuals ** 2)
@@ -275,7 +275,7 @@ def lm_series(M: np.ndarray,
                                 stdev_unscaled[i, :rank] = np.sqrt(np.diag(cov))
                             except Exception as e:
                                 if debug:
-                                    print(f"基因 {gene_name} QR分解错误: {e}")
+                                    print(f"QR decomposition error for gene {gene_name}: {e}")
                                 pass
 
                         df_residual[i] = len(y_obs) - rank
@@ -283,11 +283,11 @@ def lm_series(M: np.ndarray,
                             sigma[i] = np.sqrt(sum_res / df_residual[i])
                     except Exception as e:
                         if debug:
-                            print(f"基因 {gene_name} 拟合错误: {e}")
+                            print(f"Fitting error for gene {gene_name}: {e}")
                         pass
 
                 else:
-                    # 加权最小二乘 - 完全保持原样
+                    # Weighted least squares - kept exactly as in the original
                     w = weights[i, obs]
                     W_sqrt = np.sqrt(w)
                     W_X = X * W_sqrt[:, np.newaxis]
@@ -297,7 +297,7 @@ def lm_series(M: np.ndarray,
                         coef, residuals, rank, s = np.linalg.lstsq(W_X, W_y, rcond=None)
                         beta[i, :] = coef
 
-                        # 计算加权残差平方和
+                        # Compute the weighted residual sum of squares
                         y_fitted = X @ coef
                         residuals = y_obs - y_fitted
                         sum_res = np.sum(w * residuals ** 2)
@@ -309,7 +309,7 @@ def lm_series(M: np.ndarray,
                                 stdev_unscaled[i, :rank] = np.sqrt(np.diag(cov))
                             except Exception as e:
                                 if debug:
-                                    print(f"基因 {gene_name} 加权QR分解错误: {e}")
+                                    print(f"Weighted QR decomposition error for gene {gene_name}: {e}")
                                 pass
 
                         df_residual[i] = len(y_obs) - rank
@@ -317,10 +317,10 @@ def lm_series(M: np.ndarray,
                             sigma[i] = np.sqrt(sum_res / df_residual[i])
                     except Exception as e:
                         if debug:
-                            print(f"基因 {gene_name} 加权拟合错误: {e}")
+                            print(f"Weighted fitting error for gene {gene_name}: {e}")
                         pass
 
-    # 系数的相关矩阵 - 完全保持原样
+    # Correlation matrix of coefficients - kept exactly as in the original
     try:
         Q, R = qr(design, mode='economic')
         cov_coef = np.linalg.inv(R.T @ R)
@@ -343,7 +343,7 @@ def lm_series(M: np.ndarray,
 
 def nonEstimable(x: np.ndarray, tol: float = 1e-7) -> Optional[List[str]]:
     """
-    检查设计矩阵中哪些系数是不可估计的 - 完全保持原样
+    Check which coefficients in the design matrix are non-estimable - kept exactly as in the original.
     """
     if x is None:
         return None
@@ -351,29 +351,29 @@ def nonEstimable(x: np.ndarray, tol: float = 1e-7) -> Optional[List[str]]:
     if not isinstance(x, np.ndarray):
         x = np.array(x)
 
-    p = x.shape[1]  # 列数
+    p = x.shape[1]  # Number of columns
     Q, R, pivots = qr(x, pivoting=True, mode='economic')
 
-    # 计算秩
+    # Compute the rank
     rank = np.sum(np.abs(np.diag(R)) > tol)
 
     if rank == p:
         return None
     else:
-        # 获取列名或生成默认列名
+        # Get column names or generate default ones
         if hasattr(x, 'columns'):
             n = list(x.columns)
         else:
             n = [f'coef_{i + 1}' for i in range(p)]
 
-        # 找出不可估计的系数
+        # Identify the non-estimable coefficients
         notest = [n[pivots[i]] for i in range(rank, p)]
         return notest
 
 
 def uniquegenelist(probes: Any, ndups: int = 1, spacing: int = 1) -> Any:
     """
-    从重复的探针列表中提取唯一的基因列表 - 完全保持原样
+    Extract a unique gene list from a duplicated probe list - kept exactly as in the original.
     """
     if ndups == 1:
         return probes
@@ -382,16 +382,16 @@ def uniquegenelist(probes: Any, ndups: int = 1, spacing: int = 1) -> Any:
         return None
 
     if isinstance(probes, (list, np.ndarray)) and probes.ndim == 1:
-        # 向量
+        # Vector
         n = len(probes) // ndups
         return probes[:n]
 
     elif isinstance(probes, np.ndarray) and probes.ndim == 2:
-        # 矩阵
+        # Matrix
         n = probes.shape[0] // ndups
         return probes[:n, :]
 
-    elif hasattr(probes, 'iloc'):  # 类似pandas DataFrame
+    elif hasattr(probes, 'iloc'):  # pandas DataFrame-like
         n = len(probes) // ndups
         return probes.iloc[:n, :]
 
@@ -401,7 +401,7 @@ def uniquegenelist(probes: Any, ndups: int = 1, spacing: int = 1) -> Any:
 
 def unwrapdups(matrix: np.ndarray, ndups: int = 1, spacing: int = 1) -> np.ndarray:
     """
-    将重复的数据展开为原始格式 - 完全保持原样
+    Expand duplicated data into the original format - kept exactly as in the original.
     """
     if ndups == 1:
         return matrix
@@ -420,13 +420,13 @@ def unwrapdups(matrix: np.ndarray, ndups: int = 1, spacing: int = 1) -> np.ndarr
 
 
 def mrlm(*args, **kwargs):
-    """稳健回归功能未实现 - 完全保持原样"""
-    raise ValueError("稳健回归(mrlm)功能未实现")
+    """Robust regression is not implemented - kept exactly as in the original."""
+    raise ValueError("robust regression (mrlm) is not implemented")
 
 
 def gls_series(*args, **kwargs):
-    """广义最小二乘功能未实现 - 完全保持原样"""
-    raise ValueError("广义最小二乘(gls.series)功能未实现")
+    """Generalized least squares is not implemented - kept exactly as in the original."""
+    raise ValueError("generalized least squares (gls.series) is not implemented")
 
 
 def lmFit(object: Any,
@@ -529,31 +529,31 @@ def lmFit(object: Any,
 
     original_object = object
     if isinstance(object, pd.DataFrame):
-        # 保存索引信息
+        # Preserve the index information
         probes = object.index.tolist()
         Amean = np.nanmean(object.values, axis=1)
 
-        # 转换为标准格式，完全模拟原来的input_data结构
+        # Convert to the canonical format, mimicking the original input_data structure exactly
         object = {
             'exprs': object.values,
             'probes': probes,
             'Amean': Amean
         }
 
-    # 检查 design 是否是 pandas DataFrame
+    # Check whether `design` is a pandas DataFrame
     if isinstance(design, pd.DataFrame):
         design = design.values
-    # ========== 新增结束 ==========
+    # ========== End of added section ==========
 
-    # ========== 以下是完全保持原样的逻辑 ==========
+    # ========== The logic below is kept exactly as in the original ==========
 
-    # 从输入对象中提取组件
+    # Extract the components from the input object
     if isinstance(object, dict) and 'data' in object:
-        # 处理数据框结构
+        # Handle a data-frame-like structure
         y = {'exprs': np.array(object['data'])}
         y['Amean'] = np.nanmean(y['exprs'], axis=1)
     elif hasattr(object, 'exprs'):
-        # 假设对象有exprs属性
+        # Assume the object has an `exprs` attribute
         y = {
             'exprs': object.exprs,
             'Amean': np.nanmean(object.exprs, axis=1),
@@ -567,37 +567,37 @@ def lmFit(object: Any,
                 'spacing': getattr(object.printer, 'spacing', None)
             }
     else:
-        # 假设object已经是包含必要字段的字典
+        # Assume `object` is already a dict containing the required fields
         y = object
-        # 强制计算Amean（核心修改）
+        # Force-compute Amean (key change)
         if 'Amean' not in y or y['Amean'] is None:
             y['Amean'] = np.nanmean(y['exprs'], axis=1)
 
     if y['exprs'].shape[0] == 0:
-        raise ValueError("表达矩阵有零行")
+        raise ValueError("the expression matrix has zero rows")
 
-    # 检查设计矩阵
+    # Check the design matrix
     if design is None:
         if 'design' in y:
             design = y['design']
         else:
-            # 如果没有提供设计矩阵，默认为全1矩阵（仅截距模型）
+            # If no design matrix is provided, default to all-ones (intercept-only model)
             design = np.ones((y['exprs'].shape[1], 1))
     else:
         design = np.array(design)
         if design.dtype.kind not in 'iuf':
-            raise ValueError("design必须是数值矩阵")
+            raise ValueError("design must be a numeric matrix")
         if design.shape[0] != y['exprs'].shape[1]:
-            raise ValueError("design的行维度与数据对象的列维度不匹配")
+            raise ValueError("the row dimension of design does not match the column dimension of the data object")
         if np.any(np.isnan(design)):
-            raise ValueError("设计矩阵中不允许有NA值")
+            raise ValueError("NA values are not allowed in the design matrix")
 
-    # 检查哪些系数不可估计
+    # Check which coefficients are non-estimable
     ne = nonEstimable(design)
     if ne is not None:
-        print(f"不可估计的系数: {' '.join(ne)}")
+        print(f"non-estimable coefficients: {' '.join(ne)}")
 
-    # 检查ndups和spacing，默认为1
+    # Check ndups and spacing; default to 1
     if ndups is None:
         if 'printer' in y and 'ndups' in y['printer']:
             ndups = y['printer']['ndups']
@@ -610,15 +610,15 @@ def lmFit(object: Any,
         else:
             spacing = 1
 
-    # 检查权重
+    # Check the weights
     if weights is None and 'weights' in y:
         weights = y['weights']
 
-    # 检查方法
+    # Check the method
     if method not in ["ls", "robust"]:
-        raise ValueError("method必须是'ls'或'robust'")
+        raise ValueError("method must be 'ls' or 'robust'")
 
-    # 如果存在重复，将探针注释和Amean减少到正确的长度
+    # If duplicates are present, reduce probe annotations and Amean to the correct length
     if ndups > 1:
         if 'probes' in y and y['probes'] is not None:
             y['probes'] = uniquegenelist(y['probes'], ndups=ndups, spacing=spacing)
@@ -627,10 +627,10 @@ def lmFit(object: Any,
             y['Amean'] = np.nanmean(unwrapped, axis=0)
 
     if method == "robust":
-        raise ValueError("稳健回归(mrlm)功能未实现")
+        raise ValueError("robust regression (mrlm) is not implemented")
     else:
         if ndups < 2 and block is None:
-            # 使用最小二乘回归
+            # Use least-squares regression
             fit = lm_series(y['exprs'], design=design, ndups=ndups, spacing=spacing, weights=weights)
 
             fit['genes'] = y.get('probes', None)
@@ -643,17 +643,17 @@ def lmFit(object: Any,
 
         else:
             if correlation is None:
-                raise ValueError("必须设置相关性，请参见duplicateCorrelation")
-            raise ValueError("广义最小二乘(gls.series)功能未实现")
+                raise ValueError("correlation must be set; see duplicateCorrelation")
+            raise ValueError("generalized least squares (gls.series) is not implemented")
 
-        # 关于缺失系数的可能警告
+        # Possible warning about missing coefficients
     if fit['coefficients'] is not None and fit['coefficients'].shape[1] > 1:
         n_missing = np.sum(np.isnan(fit['coefficients']), axis=1)
         n = np.sum((n_missing > 0) & (n_missing < fit['coefficients'].shape[1]))
         if n > 0:
-            print(f"警告: 部分NA系数存在于{n}个探针中")
+            print(f"warning: partial NA coefficients present in {n} probes")
 
-    # 模拟拟合结果
+    # Mock fitting results
     fit = {
         'coefficients': np.zeros((y['exprs'].shape[0], design.shape[1])),
         'stdev_unscaled': np.ones((y['exprs'].shape[0], design.shape[1])),
@@ -661,25 +661,25 @@ def lmFit(object: Any,
         'df_residual': np.full(y['exprs'].shape[0], y['exprs'].shape[1] - design.shape[1])
     }
 
-    # 关于缺失系数的可能警告
+    # Possible warning about missing coefficients
     if fit['coefficients'].shape[1] > 1:
         n_missing = np.sum(np.isnan(fit['coefficients']), axis=1)
         n = np.sum((n_missing > 0) & (n_missing < fit['coefficients'].shape[1]))
         if n > 0:
-            print(f"警告: 部分NA系数存在于{n}个探针中")
+            print(f"warning: partial NA coefficients present in {n} probes")
 
-    # 输出结果
+    # Return the result
     result = {
         'genes': y.get('probes', None),
         'Amean': y.get('Amean', None),
         'method': method,
         'design': design,
-        'coefficients': fit['coefficients'],  # 直接访问
-        'stdev_unscaled': fit['stdev_unscaled'],  # 直接访问
-        'sigma': fit['sigma'],  # 直接访问
-        'df_residual': fit['df_residual'],  # 直接访问
-        'cov_coefficients': fit.get('cov_coefficients', None),  # 这个可以用get，因为可能不存在
-        'rank': fit.get('rank', None),  # 这个可以用get，因为可能不存在
+        'coefficients': fit['coefficients'],  # Direct access
+        'stdev_unscaled': fit['stdev_unscaled'],  # Direct access
+        'sigma': fit['sigma'],  # Direct access
+        'df_residual': fit['df_residual'],  # Direct access
+        'cov_coefficients': fit.get('cov_coefficients', None),  # Use .get() since it may not be present
+        'rank': fit.get('rank', None),  # Use .get() since it may not be present
         'nonEstimable': ne
     }
 

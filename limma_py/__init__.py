@@ -10,7 +10,7 @@ __version__ = "0.1.0"
 __author__ = "Zhang Xian"
 __email__ = "2967569628@qq.com"
 
-# 导入核心功能
+# Import core functionality
 from .lmfit import lmFit
 from .ebayes import eBayes
 from .toptable import toptable
@@ -18,7 +18,7 @@ from .test_functions import classify_tests_f
 from .contrasts import contrasts_fit
 from .makeContrasts import make_contrasts
 
-# 定义公开的API
+# Define the public API
 __all__ = [
     "lmFit",
     "eBayes",
@@ -28,7 +28,7 @@ __all__ = [
     "make_contrasts"
 ]
 
-# 包级别的文档字符串
+# Package-level docstring
 __doc__ = """
 limma_py: Python implementation of the R limma package
 

@@ -3,14 +3,14 @@ from .fitFDist import fitFDist
 
 
 def squeezeVar(var, df, covariate=None, robust=False, winsor_tail_p=(0.05, 0.1), legacy=None):
-    var = np.asarray(var, dtype=float)  # 确保 float 类型
-    n = var.size  # 基因数量
+    var = np.asarray(var, dtype=float)  # Ensure float dtype
+    n = var.size  # Number of genes
 
-    # 无观测值时报错
+    # Error when there are no observations
     if n == 0:
         raise ValueError("var is empty")
 
-    # 样本量<3时，经验贝叶斯无优势，直接返回原始方差
+    # With fewer than 3 samples empirical Bayes provides no benefit; return the raw variance directly
     if n < 3:
         return {"var_post": var,
                 "var_prior": var,
@@ -18,21 +18,21 @@ def squeezeVar(var, df, covariate=None, robust=False, winsor_tail_p=(0.05, 0.1),
 
     df = np.asarray(df, dtype=float)
 
-    # 处理无效自由度（df == 0）
-    if df.size > 1:  # 等价于 R 的 length(df) > 1
-        var[df == 0] = 0.0  # 将所有 df == 0 的位置对应的 var 置 0
+    # Handle invalid degrees of freedom (df == 0)
+    if df.size > 1:  # Equivalent to R's length(df) > 1
+        var[df == 0] = 0.0  # Zero out var at every position where df == 0
 
-    # 假设 df 已经是 np.ndarray(dtype=float)
-    if legacy is None:  # 对应 R 的 is.null(legacy)
-        dfp = df[df > 0]  # 仅保留有效自由度
+    # Assume df is already an np.ndarray(dtype=float)
+    if legacy is None:  # Corresponds to R's is.null(legacy)
+        dfp = df[df > 0]  # Keep only valid degrees of freedom
         if dfp.size == 0:
-            # 极端情况：没有有效自由度，统一用新方法
+            # Edge case: no valid degrees of freedom; fall through to the new method
             legacy = False
         else:
             legacy = bool(np.min(dfp) == np.max(dfp))
 
-    if legacy:  # 旧方法（df 相等）
-        if robust:  # 稳健估计（抗异常值）
+    if legacy:  # Legacy method (equal df)
+        if robust:  # Robust estimation (outlier-resistant)
             raise NotImplementedError(
                 "Handling unequal degrees of freedom (fitFDistRobust) not implemented."
             )
@@ -40,7 +40,7 @@ def squeezeVar(var, df, covariate=None, robust=False, winsor_tail_p=(0.05, 0.1),
         else:
             fit = fitFDist(var, df1=df, covariate=covariate)
             df_prior = fit['df2']
-    else:  # 新方法（df 不相等）
+    else:  # New method (unequal df)
         raise NotImplementedError(
             "Handling unequal degrees of freedom (fitFDistUnequalDF1) not implemented."
         )
@@ -59,27 +59,27 @@ def squeezeVar(var, df, covariate=None, robust=False, winsor_tail_p=(0.05, 0.1),
     }
 
 def _squeezeVar(var, df, var_prior, df_prior):
-    m = np.max(df_prior)  # 先验自由度的最大值
+    m = np.max(df_prior)  # Maximum prior degrees of freedom
     if np.isfinite(m):
         return (df * var + df_prior * var_prior) / (df + df_prior)
 
-    n = var.size  # 基因数量
+    n = var.size  # Number of genes
     if np.asarray(var_prior).size == n:
         var_post = var_prior
     else:
         var_post = np.resize(var_prior, n)
 
-    m = np.min(df_prior)  # 先验自由度的最小值
+    m = np.min(df_prior)  # Minimum prior degrees of freedom
     if m > 1e100:
-        return var_post  # 视为无穷大，直接返回
+        return var_post  # Treated as infinite; return directly
 
-    # 假设 var, df, df_prior, var_post 均已为同长度或广播后的 np.ndarray
-    i = np.isfinite(df_prior)  # 布尔索引：先验自由度有限的基因
-    if df.size > 1:  # 与 R 的 length(df) > 1 对应
-        df = df[i]  # 提取对应残差自由度
-    df_prior_finite = df_prior[i]  # 提取对应先验自由度
+    # Assume var, df, df_prior, and var_post are np.ndarrays of matching (or broadcastable) length
+    i = np.isfinite(df_prior)  # Boolean mask: genes with finite prior df
+    if df.size > 1:  # Corresponds to R's length(df) > 1
+        df = df[i]  # Extract the matching residual df
+    df_prior_finite = df_prior[i]  # Extract the matching prior df
 
-    # 仅对有限自由度的基因应用收缩公式
+    # Apply the shrinkage formula only to genes with finite df
     var_post[i] = (df * var[i] + df_prior_finite * var_post[i]) / (df + df_prior_finite)
 
     return var_post
