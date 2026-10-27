@@ -4,7 +4,8 @@
 **Status:** ✅ **§1(b) implemented** (2026-06-23). The default `eBayes`/`squeezeVar`
 path now handles unequal residual df via a faithful port of R limma's
 `fitFDistUnequalDF1`. The `legacy=True` workaround (§1a) is also confirmed working
-and covered by tests. Still open: robust EB (§2) and the variance-trend/covariate
+and covered by tests. Both are verified against R limma 3.68.5
+(`tests/test_r_reference.py`, 2026-10-27). Still open: robust EB (§2) and the variance-trend/covariate
 case under the unequal-df estimator (both raise `NotImplementedError`).
 
 ## What was implemented
@@ -146,7 +147,7 @@ orthogonal to missing values; only implement if robust EB is needed. Port
   - Results match R `limma` on the same matrix within tolerance — run R’s
     `lmFit`/`eBayes`/`topTable` once and check `logFC`, `t`, `P.Value`,
     `df.prior`, `s2.prior`. Test both `legacy=TRUE` (vs §1a) and the default
-    (vs §1b once implemented).
+    (vs §1b once implemented). ✅ Done: `tests/test_r_reference.py`.
 - Keep a complete-case fixture as a regression guard (must stay identical).
 - Edge fixtures: a `df_residual==0` gene and an all-missing-in-one-group gene.
 

@@ -4,9 +4,8 @@
 **Date:** 2026-06-25.
 **TL;DR:** The headline feature is **done and tested**. The full pipeline
 (`lmFit → contrasts_fit → eBayes → toptable`) now runs on expression matrices with
-`NaN`s. The one remaining item is the gold-standard verification (numeric
-cross-check against R `limma`), which is **deferred only because R is not installed
-here** — not because of any known defect.
+`NaN`s, and is **verified against R limma 3.68.5** (agreement to ~1e-11 on both the
+default and `legacy=True` paths; see `tests/test_r_reference.py`).
 
 See `MISSING_VALUES_TODO.md` for the original design note and the rationale behind
 choosing solution **(b)** (faithful port) over **(a)** (legacy moment estimator).
@@ -79,24 +78,29 @@ End-to-end pipeline tests:
 - `test_complete_case_uses_legacy_branch` — regression guard, default == legacy.
 - `test_edge_genes_propagate_nan_without_crash`.
 
-Run: `python -m pytest tests/test_missing_values.py -q` → `9 passed`.
+Run: `python -m pytest tests -q` → `13 passed` (9 here + 4 R-reference).
 
-## ⭐ Outstanding verification (the real next step)
+## ✅ Verification against R limma (done 2026-10-27)
 
-**Numeric cross-check against R `limma` on an identical fixture.** This is the
-gold standard and the only meaningful gap. R was not installed in this environment
-so it was substituted with Monte Carlo recovery + legacy-agreement tests. To close
-it:
+`tests/test_r_reference.py` (4 tests) compares the Python output with pinned R
+outputs in `tests/data/r_reference/`, so it runs without R:
 
-1. Build one fixture matrix with injected NaNs (reuse `_inject_missing` /
-   `_make_expr` from the test file, or export a CSV).
-2. In R: `lmFit` → `contrasts.fit` → `eBayes` → `topTable`, for **both**
-   `eBayes(legacy=TRUE)` and the default.
-3. Compare against Python output: `logFC`, `t`, `P.Value`, `df.prior` (`df_prior`),
-   `s2.prior` (`var_prior` / `scale`). Expect agreement to within optimizer
-   tolerance.
-4. Add as a (skippable-if-no-R) test, e.g. pin R's numbers as constants so it runs
-   without R in CI.
+- `fixA.csv`: 500 genes × 8 samples, 75 genes with 1–3 NaNs (df ∈ {3,4,5,6}).
+  Full `lmFit → contrasts.fit → eBayes` for default and `legacy=TRUE`; checks
+  `logFC`, `t`, `P.Value`, `B`, `s2.post`, `df.total`, `df.residual`, `df.prior`,
+  `s2.prior` at `rtol=1e-8`. Observed max rel diff ~1e-11.
+- `fixB.csv`: 3000 scaled-F variances with df1 ∈ {2..8}, plus zeros, NaNs and
+  zero-df entries; `fitFDistUnequalDF1` and `fitFDist` directly.
+
+To regenerate: `make_fixtures.py`, then `Rscript generate.R` in that directory
+(an R env exists at `/opt/miniforge3/envs/rlimma`).
+
+**Optimizer tolerance:** with scipy's default `xatol` (1e-5) the default path
+differed from R by ~3e-5 in `df.prior`. Solving both to `tol=1e-12` gave
+agreement to ~1e-7, which confirmed the port is correct and the gap was only
+where each optimizer stopped. Both use Brent's method, so `fitFDistUnequalDF1`
+now passes R's default `tol` (`eps**0.25`) and reproduces R's output almost
+exactly.
 
 R source for reference:
 `https://code.bioconductor.org/browse/limma/raw/devel/R/fitFDistUnequalDF1.R`.

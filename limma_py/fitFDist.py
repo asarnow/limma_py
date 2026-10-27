@@ -335,8 +335,10 @@ def fitFDistUnequalDF1(x, df1, covariate=None, span=None, robust=False, prior_we
                 - d1 * np.log(d2s20)
                 + gammaln(d1 + d2) - gammaln(d2))
 
-    # Optimization over par in (1/2, 0.9998), matching R's optimize().
-    res = minimize_scalar(minus_twice_log_lik, bounds=(0.5, 0.9998), method="bounded")
+    # Optimization over par in (1/2, 0.9998), matching R's optimize(). Both are
+    # Brent's method; using R's default tol (eps^0.25) reproduces R's result.
+    res = minimize_scalar(minus_twice_log_lik, bounds=(0.5, 0.9998), method="bounded",
+                          options={"xatol": np.finfo(float).eps ** 0.25})
     par_min = res.x
     d2 = par_min / (1.0 - par_min)
     s20 = np.exp(emean + logmdigamma(d2))
