@@ -24,6 +24,33 @@ def as_matrix_weights(weights, shape):
         raise ValueError("权重维度不匹配")
 
 
+def _lm_fit_one(X: np.ndarray, y: np.ndarray, w: Optional[np.ndarray] = None,
+                tol: float = 1e-7):
+    """Least-squares fit of one gene, as R's lm.fit / lm.wfit.
+
+    Uses a column-pivoted QR so that coefficients the observed rows cannot estimate
+    (e.g. a group with no observations) are returned as NaN with NaN standard
+    deviation, rather than the zero a minimum-norm solution would give.
+    Returns (coefficients, stdev_unscaled, residual sum of squares, rank).
+    """
+    nbeta = X.shape[1]
+    coef = np.full(nbeta, np.nan)
+    stdev = np.full(nbeta, np.nan)
+    if w is not None:
+        sw = np.sqrt(w)
+        X, y = X * sw[:, None], y * sw
+    Q, R, piv = qr(X, mode="economic", pivoting=True)
+    d = np.abs(np.diag(R))
+    rank = int(np.sum(d > tol * d[0])) if d.size and d[0] > 0 else 0
+    if rank == 0:
+        return coef, stdev, np.sum(y ** 2), 0
+    est = piv[:rank]
+    Rinv = np.linalg.inv(R[:rank, :rank])
+    coef[est] = Rinv @ (Q[:, :rank].T @ y)
+    stdev[est] = np.sqrt(np.sum(Rinv ** 2, axis=1))
+    resid = y - X[:, est] @ coef[est]
+    return coef, stdev, np.sum(resid ** 2), rank
+
 def lm_series(M: np.ndarray,
               design: Optional[np.ndarray] = None,
               ndups: int = 1,
@@ -248,7 +275,6 @@ def lm_series(M: np.ndarray,
         df_residual = np.zeros(ngenes)
 
         for i in range(ngenes):
-            gene_name = row_names[i] if i < len(row_names) else f"gene_{i}"
             y = M[i, :].copy()
             obs = np.isfinite(y)
             valid_count = np.sum(obs)
@@ -257,68 +283,13 @@ def lm_series(M: np.ndarray,
                 X = design[obs, :]
                 y_obs = y[obs]
 
-                if weights is None:
-                    # 普通最小二乘 - 完全保持原样
-                    try:
-                        coef, residuals, rank, s = np.linalg.lstsq(X, y_obs, rcond=None)
-                        beta[i, :] = coef
-
-                        # 计算残差平方和
-                        y_fitted = X @ coef
-                        residuals = y_obs - y_fitted
-                        sum_res = np.sum(residuals ** 2)
-
-                        if rank > 0:
-                            try:
-                                Q, R = qr(X, mode='economic')
-                                cov = np.linalg.inv(R.T @ R)
-                                stdev_unscaled[i, :rank] = np.sqrt(np.diag(cov))
-                            except Exception as e:
-                                if debug:
-                                    print(f"基因 {gene_name} QR分解错误: {e}")
-                                pass
-
-                        df_residual[i] = len(y_obs) - rank
-                        if df_residual[i] > 0:
-                            sigma[i] = np.sqrt(sum_res / df_residual[i])
-                    except Exception as e:
-                        if debug:
-                            print(f"基因 {gene_name} 拟合错误: {e}")
-                        pass
-
-                else:
-                    # 加权最小二乘 - 完全保持原样
-                    w = weights[i, obs]
-                    W_sqrt = np.sqrt(w)
-                    W_X = X * W_sqrt[:, np.newaxis]
-                    W_y = y_obs * W_sqrt
-
-                    try:
-                        coef, residuals, rank, s = np.linalg.lstsq(W_X, W_y, rcond=None)
-                        beta[i, :] = coef
-
-                        # 计算加权残差平方和
-                        y_fitted = X @ coef
-                        residuals = y_obs - y_fitted
-                        sum_res = np.sum(w * residuals ** 2)
-
-                        if rank > 0:
-                            try:
-                                Q, R = qr(W_X, mode='economic')
-                                cov = np.linalg.inv(R.T @ R)
-                                stdev_unscaled[i, :rank] = np.sqrt(np.diag(cov))
-                            except Exception as e:
-                                if debug:
-                                    print(f"基因 {gene_name} 加权QR分解错误: {e}")
-                                pass
-
-                        df_residual[i] = len(y_obs) - rank
-                        if df_residual[i] > 0:
-                            sigma[i] = np.sqrt(sum_res / df_residual[i])
-                    except Exception as e:
-                        if debug:
-                            print(f"基因 {gene_name} 加权拟合错误: {e}")
-                        pass
+                w = None if weights is None else weights[i, obs]
+                coef, stdev, sum_res, rank = _lm_fit_one(X, y_obs, w)
+                beta[i, :] = coef
+                stdev_unscaled[i, :] = stdev
+                df_residual[i] = len(y_obs) - rank
+                if df_residual[i] > 0:
+                    sigma[i] = np.sqrt(sum_res / df_residual[i])
 
     # 系数的相关矩阵 - 完全保持原样
     try:

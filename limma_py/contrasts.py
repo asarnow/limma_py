@@ -177,28 +177,26 @@ def contrasts_fit(
     fit["cov_coefficients"] = fit_cov_coef
 
     # 4.3 Calculate contrasted unscaled standard deviation
-    # Determine if design matrix is orthogonal (off-diagonal elements of covariance matrix are close to 0)
-    if n_coef >= 2:
-        cormatrix = fit_cov_coef / (np.sqrt(np.diag(fit_cov_coef))[:, None] @ np.sqrt(np.diag(fit_cov_coef))[None, :])
+    # As in R, orthogonality is judged on the correlation of the original coefficients
+    # (not of the contrasts), and the non-orthogonal path uses its Cholesky factor.
+    if "cov_coefficients" in fit and n_coef >= 2:
+        sd = np.sqrt(np.diag(np.asarray(cov_coef)))
+        cormatrix = np.asarray(cov_coef) / np.outer(sd, sd)
         is_orthog = np.sum(np.abs(cormatrix[np.tril_indices_from(cormatrix, k=-1)])) < 1e-12
     else:
-        is_orthog = True  # Default to orthogonal for single coefficient
+        is_orthog = True
 
+    contrasts_arr = np.asarray(contrasts)
     if is_orthog:
         # Orthogonal design: standard deviation = sqrt(sum of (coefficient standard deviation² × contrast²))
-        fit_stdev_unscaled = np.sqrt(stdev_unscaled** 2 @ np.square(contrasts))
+        fit_stdev_unscaled = np.sqrt(stdev_unscaled ** 2 @ np.square(contrasts_arr))
     else:
-        # Non-orthogonal design: calculate standard deviation based on covariance matrix (Cholesky decomposition)
-        cormatrix = fit_cov_coef / (np.sqrt(np.diag(fit_cov_coef))[:, None] @ np.sqrt(np.diag(fit_cov_coef))[None, :])
-        R = np.linalg.cholesky(cormatrix)  # Cholesky decomposition of covariance matrix
-        n_contrasts = contrasts.shape[1]
+        R = np.linalg.cholesky(cormatrix).T  # upper triangular, as R's chol()
+        n_contrasts = contrasts_arr.shape[1]
         fit_stdev_unscaled = np.zeros((n_genes, n_contrasts))
-
-        # Calculate standard deviation for non-orthogonal design gene by gene
         for i in range(n_genes):
-            # Standard deviation vector of gene i × contrast matrix
-            ruc = R @ (stdev_unscaled[i, :].reshape(-1, 1) @ np.ones((1, n_contrasts)) * contrasts)
-            fit_stdev_unscaled[i, :] = np.sqrt(np.sum(ruc **2, axis=0))
+            ruc = R @ (stdev_unscaled[i, :][:, None] * contrasts_arr)
+            fit_stdev_unscaled[i, :] = np.sqrt(np.sum(ruc ** 2, axis=0))
 
     # --------------------------
     # 5. Restore NA coefficients (restore coefficients corresponding to standard deviations set to large values to NA)
