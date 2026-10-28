@@ -1,6 +1,7 @@
 import numpy as np
-from scipy.special import digamma, polygamma
+from scipy.special import digamma, polygamma, gammaln
 from scipy.linalg import lstsq, qr
+from scipy.optimize import minimize_scalar
 from .utils.ns import ns
 
 
@@ -178,4 +179,176 @@ def fitFDist(x, df1, covariate=None):
             s20 = np.exp(emean)
 
     return {'scale': s20, 'df2': df2}
+
+
+def _subset_unit_vector(x, i):
+    """Subset a vector, treating a length-1 vector as a vector of equal values.
+
+    Faithful port of R limma's ``.subsetUnitVector``.
+    """
+    x = np.asarray(x)
+    if x.size == 1:
+        return x
+    return x[i]
+
+
+def fitFDistUnequalDF1(x, df1, covariate=None, span=None, robust=False, prior_weights=None):
+    """Robust estimation of the parameters of a scaled F-distribution given df1.
+
+    This is the modern (``legacy=False``) hyperparameter estimator used by
+    ``squeezeVar``/``eBayes``. Unlike the moment-based :func:`fitFDist`, it gives
+    special attention to the possibility that ``df1`` varies substantially between
+    observations (e.g. missing-value data with per-gene residual df). It estimates
+    the prior scale and ``df2`` by maximizing the profile log-likelihood of a
+    scaled F-distribution.
+
+    Faithful port of R limma's ``fitFDistUnequalDF1`` (Gordon Smyth and Lizhong
+    Chen, ``R/fitFDistUnequalDF1.R``).
+
+    Parameters
+    ----------
+    x : array-like
+        Sample variances (one per gene).
+    df1 : float or array-like
+        Numerator degrees of freedom (per-gene residual df). May be a scalar or a
+        vector of length ``len(x)``.
+    covariate : array-like, optional
+        Covariate for a variance trend (e.g. average log-expression). Not yet
+        supported in this estimator; use ``legacy=True`` for trended fits.
+    span : float, optional
+        Span for the lowess trend fit (only relevant when ``covariate`` is given).
+    robust : bool, optional
+        Whether to down-weight outliers. Not yet implemented for this estimator.
+    prior_weights : array-like, optional
+        Non-negative prior weights, one per gene.
+
+    Returns
+    -------
+    dict
+        ``{'scale': s20, 'df2': df2}`` (non-robust), or additionally
+        ``'df2_outlier'``/``'df2_shrunk'`` for the robust path.
+    """
+    x = np.asarray(x, dtype=np.float64).copy()
+    n = x.size
+
+    # Check df1. Can be a unit (length-1) vector.
+    df1 = np.asarray(df1, dtype=np.float64)
+    if df1.size not in (1, n):
+        raise ValueError("x and df1 are different lengths")
+    if np.any(np.isnan(df1)):
+        raise ValueError("NA df1 values")
+    # Recycle df1 to length n so per-gene masking below is well defined.
+    df1 = np.full(n, float(df1)) if df1.size == 1 else df1.astype(np.float64).copy()
+
+    # Check covariate
+    if covariate is not None:
+        covariate = np.asarray(covariate, dtype=np.float64)
+        if covariate.size != n:
+            raise ValueError("x and covariate are different lengths")
+        if np.any(np.isnan(covariate)):
+            raise ValueError("covariate contains NA values")
+
+    # Check prior.weights
+    if prior_weights is not None:
+        prior_weights = np.asarray(prior_weights, dtype=np.float64).copy()
+        if prior_weights.size != n:
+            raise ValueError("x and prior.weights are different lengths")
+        m = np.min(prior_weights)
+        if np.isnan(m):
+            raise ValueError("prior.weights contain NA values")
+        if m < 0:
+            raise ValueError("prior.weights are negative")
+
+    # Check for NAs in x: zero out the value and give it zero prior weight.
+    if np.any(np.isnan(x)):
+        i = np.isnan(x)
+        if prior_weights is None:
+            prior_weights = (~i).astype(np.float64)
+        else:
+            prior_weights[i] = 0.0
+        x[i] = 0.0
+
+    # Treat small df1 values as un-informative.
+    if np.min(df1) < 0.01:
+        i = df1 < 0.01
+        if prior_weights is None:
+            prior_weights = (~i).astype(np.float64)
+        else:
+            prior_weights[i] = 0.0
+        df1[i] = 1.0
+
+    PriorWeights = prior_weights is not None
+
+    # Check there are some informative x values.
+    i = x > 0
+    if PriorWeights:
+        i[prior_weights == 0] = False
+    n_informative = int(np.sum(i))
+    if n_informative < 2:
+        return {"scale": np.nan, "df2": np.nan}
+    if n_informative == 2:
+        covariate = None
+        robust = False
+        prior_weights = None
+        PriorWeights = False
+
+    # Avoid exactly zero x values for moment estimation.
+    m = np.median(x[i])
+    xpos = np.maximum(x, 1e-12 * m)
+
+    # Work with log(F).
+    z = np.log(xpos)
+
+    # Average log(F) adjusted for d1. NB: this module's ``logmdigamma`` is
+    # digamma(a)-log(a), i.e. the negative of R limma's ``logmdigamma`` (which is
+    # log(a)-digamma(a)), so the signs here are flipped relative to the R source.
+    d1 = df1 / 2.0
+    e = z - logmdigamma(d1)
+    w = 1.0 / polygamma(1, d1)  # trigamma
+    if PriorWeights:
+        w = w * prior_weights
+    if covariate is None:
+        emean = np.sum(w * e) / np.sum(w)
+    else:
+        raise NotImplementedError(
+            "Variance-trend (covariate) fitting is not implemented for the "
+            "unequal-df estimator. Use eBayes(..., legacy=True) for a trended "
+            "fit on missing-value data."
+        )
+
+    # Log-likelihood function (parameterized so par in (0, 1) maps to d2 in (0, Inf)).
+    d1x = d1 * xpos
+    if PriorWeights:
+        def minus_twice_log_lik(par):
+            d2 = par / (1.0 - par)
+            d2s20 = d2 * np.exp(emean + logmdigamma(d2))
+            return -2.0 * np.sum(prior_weights * (
+                -(d1 + d2) * np.log1p(d1x / d2s20)
+                - d1 * np.log(d2s20)
+                + gammaln(d1 + d2) - gammaln(d2)))
+    else:
+        def minus_twice_log_lik(par):
+            d2 = par / (1.0 - par)
+            d2s20 = d2 * np.exp(emean + logmdigamma(d2))
+            return -2.0 * np.sum(
+                -(d1 + d2) * np.log1p(d1x / d2s20)
+                - d1 * np.log(d2s20)
+                + gammaln(d1 + d2) - gammaln(d2))
+
+    # Optimization over par in (1/2, 0.9998), matching R's optimize(). Both are
+    # Brent's method; using R's default tol (eps^0.25) reproduces R's result.
+    res = minimize_scalar(minus_twice_log_lik, bounds=(0.5, 0.9998), method="bounded",
+                          options={"xatol": np.finfo(float).eps ** 0.25})
+    par_min = res.x
+    d2 = par_min / (1.0 - par_min)
+    s20 = np.exp(emean + logmdigamma(d2))
+
+    # Finish here if robust=False.
+    if not robust:
+        return {"scale": s20, "df2": 2.0 * d2}
+
+    raise NotImplementedError(
+        "Robust estimation (fitFDistUnequalDF1 robust path) is not implemented; "
+        "call eBayes/squeezeVar with robust=False."
+    )
 
